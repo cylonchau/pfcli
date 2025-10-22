@@ -1,4 +1,4 @@
-name: Build Go Binaries
+name: Release package
 
 on:
   push:
@@ -21,7 +21,24 @@ jobs:
     container:
       image: ${{ matrix.os.name }}:${{ matrix.os.version }}
     steps:
-      - uses: actions/checkout@v4
+      # CentOS 7 需要切换到 vault 源
+      - name: Switch to CentOS vault repo
+        if: matrix.os.name == 'centos' && matrix.os.version == '7'
+        run: |
+          sed -i 's/mirror.centos.org/vault.centos.org/g' /etc/yum.repos.d/*.repo
+          sed -i 's/^#.*baseurl=http/baseurl=http/g' /etc/yum.repos.d/*.repo
+          sed -i 's/^mirrorlist=http/#mirrorlist=http/g' /etc/yum.repos.d/*.repo
+
+      # CentOS 7 使用 checkout@v3
+      - name: Checkout code (CentOS 7)
+        if: matrix.os.name == 'centos' && matrix.os.version == '7'
+        uses: taiki-e/checkout-action@v1
+
+      # 其他系统使用 checkout@v4
+      - name: Checkout code (Modern)
+        if: matrix.os.version != '7'
+        uses: actions/checkout@v4
+
       - name: Extract version from tag or use default
         id: version
         run: |
@@ -33,7 +50,16 @@ jobs:
 
       - name: Install build tools
         run: |
-          dnf install -y git rpm-build rpmdevtools make gcc shc
+          if [ "${{ matrix.os.name }}" == "centos" ]; then
+            yum install -y epel-release && yum makecache
+            yum install -y git rpm-build rpmdevtools make gcc shc
+          else
+            # Rocky Linux 9
+            dnf install -y epel-release  && yum makecache
+            dnf install -y git rpm-build rpmdevtools make gcc
+            curl -L -O http://download.fedoraproject.org/pub/epel/9/Everything/x86_64/Packages/s/shc-4.0.3-11.el9.x86_64.rpm
+            dnf install -y shc-4.0.3-11.el9.x86_64.rpm
+          fi
 
       - name: Setup rpmbuild directories
         run: mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
@@ -83,7 +109,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/**/*.tar.gz
+          files: dist/**/*.rpm
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
