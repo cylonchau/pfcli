@@ -20,9 +20,6 @@ Requires:       socat, bash
 Linux port mapping cli with socat
 
 %prep
-# Copy documentation to BUILD directory for %doc and %license macros
-cp %{SOURCE4} .
-cp %{SOURCE5} .
 
 %build
 # Compile kubee.sh to binary using shc

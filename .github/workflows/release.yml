@@ -17,26 +17,12 @@ jobs:
       matrix:
         os:
           - { name: rockylinux, version: "9", dist: el9 }
-          - { name: centos, version: "7", dist: el7 }
+          - { name: almalinux, version: "8", dist: el7 }  # 用 alma8 编译 el7
     container:
       image: ${{ matrix.os.name }}:${{ matrix.os.version }}
     steps:
-      # CentOS 7 需要切换到 vault 源
-      - name: Switch to CentOS vault repo
-        if: matrix.os.name == 'centos' && matrix.os.version == '7'
-        run: |
-          sed -i 's/mirror.centos.org/vault.centos.org/g' /etc/yum.repos.d/*.repo
-          sed -i 's/^#.*baseurl=http/baseurl=http/g' /etc/yum.repos.d/*.repo
-          sed -i 's/^mirrorlist=http/#mirrorlist=http/g' /etc/yum.repos.d/*.repo
-
-      # CentOS 7 使用 checkout@v3
-      - name: Checkout code (CentOS 7)
-        if: matrix.os.name == 'centos' && matrix.os.version == '7'
-        uses: taiki-e/checkout-action@v1
-
-      # 其他系统使用 checkout@v4
-      - name: Checkout code (Modern)
-        if: matrix.os.version != '7'
+      # 所有系统使用 checkout@v4
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Extract version from tag or use default
@@ -50,15 +36,16 @@ jobs:
 
       - name: Install build tools
         run: |
-          if [ "${{ matrix.os.name }}" == "centos" ]; then
-            yum install -y epel-release && yum makecache
-            yum install -y git rpm-build rpmdevtools make gcc shc
+          if [ "${{ matrix.os.name }}" == "almalinux" ] && [ "${{ matrix.os.version }}" == "8" ]; then
+            # AlmaLinux 8 (编译 el7)
+            dnf install -y epel-release
+            dnf install -y git rpm-build rpmdevtools make gcc shc
           else
             # Rocky Linux 9
-            dnf install -y epel-release  && yum makecache
             dnf install -y git rpm-build rpmdevtools make gcc
+            # 从 Fedora EPEL 下载 shc
             curl -L -O http://download.fedoraproject.org/pub/epel/9/Everything/x86_64/Packages/s/shc-4.0.3-11.el9.x86_64.rpm
-            dnf install -y shc-4.0.3-11.el9.x86_64.rpm
+            rpm -ivh shc-4.0.3-11.el9.x86_64.rpm
           fi
 
       - name: Setup rpmbuild directories
@@ -79,7 +66,13 @@ jobs:
 
       - name: Build RPM
         run: |
-          rpmbuild --define "_version ${{ steps.version.outputs.version }}" -bb ~/rpmbuild/SPECS/pfcli.spec
+          if [ "${{ matrix.os.dist }}" == "el7" ]; then
+            # 编译为 el7 包
+            rpmbuild --define "_version ${{ steps.version.outputs.version }}" --define "dist .el7" -bb ~/rpmbuild/SPECS/pfcli.spec
+          else
+            # 使用默认 dist
+            rpmbuild --define "_version ${{ steps.version.outputs.version }}" -bb ~/rpmbuild/SPECS/pfcli.spec
+          fi
 
       - name: Copy RPM packages
         run: |
@@ -89,7 +82,7 @@ jobs:
       - name: Upload RPM packages
         uses: actions/upload-artifact@v4
         with:
-          name: rpm-${{ matrix.os.name }}-${{ matrix.os.version }}
+          name: rpm-${{ matrix.os.dist }}
           path: dist/rpm/*.rpm
 
   release:
