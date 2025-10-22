@@ -1,0 +1,89 @@
+name: Build Go Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-rpm:
+    name: Build RPM packages
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os:
+          - { name: rockylinux, version: "9", dist: el9 }
+          - { name: centos, version: "7", dist: el7 }
+    container:
+      image: ${{ matrix.os.name }}:${{ matrix.os.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version from tag or use default
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Building version $VERSION from tag"
+          fi
+
+      - name: Install build tools
+        run: |
+          dnf install -y git rpm-build rpmdevtools make gcc shc
+
+      - name: Setup rpmbuild directories
+        run: mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+      - name: Copy source files
+        run: |
+          cp pfcli.sh ~/rpmbuild/SOURCES/
+          cp README.md ~/rpmbuild/SOURCES/
+          if [ ! -f LICENSE ]; then
+            echo "MIT License" > ~/rpmbuild/SOURCES/LICENSE
+          else
+            cp LICENSE ~/rpmbuild/SOURCES/
+          fi
+
+      - name: Copy spec file
+        run: cp rpm/pfcli.spec ~/rpmbuild/SPECS/
+
+      - name: Build RPM
+        run: |
+          rpmbuild --define "_version ${{ steps.version.outputs.version }}" -bb ~/rpmbuild/SPECS/pfcli.spec
+
+      - name: Copy RPM packages
+        run: |
+          mkdir -p dist/rpm
+          cp ~/rpmbuild/RPMS/*/*.rpm dist/rpm/
+
+      - name: Upload RPM packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.os.name }}-${{ matrix.os.version }}
+          path: dist/rpm/*.rpm
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/**/*.tar.gz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
