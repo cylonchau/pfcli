@@ -3,7 +3,7 @@ name: Release package
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
       matrix:
         os:
           - { name: rockylinux, version: "9", dist: el9 }
-          - { name: almalinux, version: "8", dist: el7 }  # 用 alma8 编译 el7
+          - { name: almalinux, version: "8", dist: el7 } # 用 alma8 编译 el7
     container:
       image: ${{ matrix.os.name }}:${{ matrix.os.version }}
     steps:
@@ -84,6 +84,7 @@ jobs:
         with:
           name: rpm-${{ matrix.os.dist }}
           path: dist/rpm/*.rpm
+          retention-days: 1
 
   release:
     name: Create GitHub Release
