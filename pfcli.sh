@@ -195,8 +195,18 @@ list_mappings() {
     echo "Current port mappings:"
     echo "Local address:port -> Remote address:port (PID)"
     echo "-----------------------------------"
+    
+    # Get all PIDs from the mapping file
+    local pids=$(awk '{print $3}' "$MAPPING_FILE" | tr '\n' ' ')
+    
+    # Check all PIDs at once
+    local active_pids=""
+    if [ -n "$pids" ]; then
+        active_pids=$(ps -p $pids -o pid= 2>/dev/null)
+    fi
+
     while IFS=' ' read -r local remote pid; do
-        if ps -p "$pid" > /dev/null 2>&1; then
+        if echo "$active_pids" | grep -q "\b$pid\b"; then
             echo "$local -> $remote ($pid)"
         else
             echo "$local -> $remote ($pid, invalid)"
