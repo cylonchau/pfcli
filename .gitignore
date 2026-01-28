@@ -65,3 +65,7 @@ Backup_*
 __pycache__/
 *.py[cod]
 .idea
+test_pfcli.sh
+socat_manage_test.log
+socat_mappings_test*
+.vscode

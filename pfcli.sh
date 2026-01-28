@@ -5,15 +5,25 @@
 # Commands: add <local IP:port> <remote IP or domain:port> | remove <local IP:port> | list | restore | help
 
 # Mapping information storage file
-MAPPING_FILE="$HOME/.socat_mappings"
+MAPPING_FILE="${MAPPING_FILE:-$HOME/.socat_mappings}"
 # Log file
-LOG_FILE="/var/log/socat_manage.log"
+LOG_FILE="${LOG_FILE:-/var/log/socat_manage.log}"
 
-# Check if socat is installed
+# Check dependencies
+MISSING_DEPS=()
 if ! command -v socat &> /dev/null; then
-    echo "Error: socat is not installed, please install socat first"
-    echo "On Debian-based systems, use: sudo apt-get install socat"
-    echo "On Red Hat-based systems, use: sudo yum install socat"
+    MISSING_DEPS+=("socat")
+fi
+
+# Check for domain resolution tools (host or nslookup)
+HAS_RESOLVER=0
+if command -v host &> /dev/null || command -v nslookup &> /dev/null || command -v getent &> /dev/null; then
+    HAS_RESOLVER=1
+fi
+
+if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
+    echo "Error: The following required dependencies are missing: ${MISSING_DEPS[*]}"
+    echo "Please install them using your package manager (e.g., yum install ${MISSING_DEPS[*]} or apt-get install ${MISSING_DEPS[*]})"
     exit 1
 fi
 
@@ -34,13 +44,19 @@ validate_host() {
     # IP address format validation
     if [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         return 0
-    # Domain name format validation (simple regex, allowing letters, numbers, hyphens, and dots)
+    # Domain name format validation
     elif [[ "$host" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]*(\.[a-zA-Z0-9][a-zA-Z0-9-]*)*$ ]]; then
-        # Check if domain can be resolved
-        if host "$host" >/dev/null 2>&1; then
+        # Check if domain resolution tools are available
+        if [ "$HAS_RESOLVER" -eq 0 ]; then
+            echo "Warning: No domain resolution tool (host, nslookup, getent) found. Skipping resolution check for $host."
+            return 0
+        fi
+
+        # Attempt to resolve domain
+        if host "$host" >/dev/null 2>&1 || nslookup "$host" >/dev/null 2>&1 || getent hosts "$host" >/dev/null 2>&1; then
             return 0
         else
-            echo "Error: Unable to resolve domain $host"
+            echo "Error: Unable to resolve domain $host. If this is a private domain, ensure your resolver is configured correctly."
             return 1
         fi
     else
